@@ -14,6 +14,11 @@ FRAME_DURATION = 30  # in ms
 VAD_MODE = 2  # 0–3, 3 = aggressive
 SILENCE_MS = 1000
 
+SYSTEM_PROMPT = (
+    "You are a friendly and curious assistant who always responds in a witty, British tone."
+)
+
+
 model_path = hf_hub_download(repo_id="TheBloke/Mistral-7B-Instruct-v0.2-GGUF", filename="mistral-7b-instruct-v0.2.Q5_K_S.gguf")
 
 llm = Llama(
@@ -80,10 +85,6 @@ def transcribe_chunks(chunks, sample_rate, whisper_model=None):
         all_text.append(result['text'].strip())
     return ' '.join(all_text)
 
-SYSTEM_PROMPT = (
-    "You are a friendly and curious assistant who always responds in a witty, British tone."
-)
-
 async def ask_llm_streaming(prompt: str):
     buffer = ""
     pattern = re.compile(r'([.,;!?。！？：\n])')  # punctuation that implies a boundary
@@ -125,9 +126,27 @@ def ask_llm(prompt: str) -> str:
     )
     return response['choices'][0]['message']['content'].strip()
 
-    #full_prompt = f"{SYSTEM_PROMPT}\n\nUser: {prompt}\nAssistant:"
-    #response = llm(full_prompt, temperature=0.7, max_tokens=512, stop=["User:", "System:", "\n\n"])
-    #return response['choices'][0]['text'].strip()
+async def ask_llm_lsd_streaming(prompt: str):
+    buffer = ""
+    pattern = re.compile(r'([.,;!?。！？：\n])')  # punctuation that implies a boundary
+    full_prompt = f"{SYSTEM_PROMPT}\n\nUser: {prompt}\nAssistant:"
+    stream = llm(full_prompt, temperature=0.7, max_tokens=512, stop=["User:", "System:", "\n\n"], stream=True)
+
+    for chunk in stream:
+        print(chunk)
+        token = chunk["choices"][0]["text"]
+        if not token:
+            continue
+
+        buffer += token
+
+        # Check for natural break
+        if pattern.search(token) or len(buffer) > 100:  # fail-safe: send if buffer too long
+            yield buffer.strip()
+            buffer = ""
+
+    if buffer.strip():
+        yield buffer.strip()
 
 
 def main(filename):

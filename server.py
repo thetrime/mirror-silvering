@@ -3,8 +3,9 @@ import websockets
 import numpy as np
 
 from whisper import load_model
-from core import split_audio_with_vad, transcribe_chunks, ask_llm, ask_llm_streaming
+from core import split_audio_with_vad, transcribe_chunks, ask_llm_lsd_streaming, ask_llm_streaming
 
+streaming = True
 SAMPLE_RATE = 16000
 CHUNK_DURATION_SEC = 5  # how much audio to collect before processing
 BYTES_PER_SAMPLE = 2  # 16-bit PCM
@@ -33,12 +34,13 @@ async def handle_client(websocket):
                 print(f"Processing {len(chunks)} chunks...")
                 text = transcribe_chunks(chunks, SAMPLE_RATE, model)
                 if (text.strip()):
-                    #print(f"Sending this to LLM: {text}")
-                    #reply = ask_llm(text)
-                    #print(f"Got this from LLM: {reply}")
-                    #await websocket.send(reply)
-                    async for chunk in ask_llm_streaming(text):
-                        await websocket.send(chunk)
+                    if streaming:
+                        async for chunk in ask_llm_lsd_streaming(text):
+                            await websocket.send(chunk)
+                    else:
+                        reply = ask_llm_lsd(text)
+                        print(f"Got this from LLM: {reply}")
+                        await websocket.send(reply)
                 else:
                     print(f"No chunks received")
 
