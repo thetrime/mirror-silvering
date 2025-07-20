@@ -7,5 +7,9 @@ openai
 resampy
 huggingface_hub
 git+https://github.com/openai/whisper.git
+whisper
 
 # pip install llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/metal
+# OR
+# CMAKE_ARGS="-DGGML_METAL=on" pip install llama-cpp-python
+llama-cpp-python -C cmake.args="-DGGML_METAL=on"

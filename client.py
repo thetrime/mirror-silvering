@@ -1,7 +1,6 @@
 import asyncio
 import websockets
 import sounddevice as sd
-import numpy as np
 
 SAMPLE_RATE = 16000
 CHUNK_SIZE = 1024  # samples per frame
@@ -27,7 +26,7 @@ async def stream_audio():
             while True:
                 try:
                     reply = await websocket.recv()
-                    print("LLM:", reply)
+                    print(reply, end=" ", flush=True)
                 except websockets.ConnectionClosed:
                     print("Server disconnected")
                     break

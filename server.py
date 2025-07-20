@@ -3,18 +3,19 @@ import websockets
 import numpy as np
 
 from whisper import load_model
-from core import split_audio_with_vad, transcribe_chunks, ask_llm_lsd_streaming, ask_llm_streaming
+from core import split_audio_with_vad, transcribe_chunks, ask_chat_streaming, ask_llm_streaming
 
-streaming = True
+chatMode = True
 SAMPLE_RATE = 16000
 CHUNK_DURATION_SEC = 5  # how much audio to collect before processing
 BYTES_PER_SAMPLE = 2  # 16-bit PCM
 
-model = load_model("base")
+whisper = load_model("base")
 
 buffer = bytearray()
 
-async def handle_client(websocket):
+
+async def handle_client(websocket: any) -> None:
     print("Client connected")
     global buffer
 
@@ -32,21 +33,23 @@ async def handle_client(websocket):
 
                 chunks = split_audio_with_vad(audio, SAMPLE_RATE)
                 print(f"Processing {len(chunks)} chunks...")
-                text = transcribe_chunks(chunks, SAMPLE_RATE, model)
-                if (text.strip()):
-                    if streaming:
-                        async for chunk in ask_llm_lsd_streaming(text):
+                text = transcribe_chunks(chunks, SAMPLE_RATE, whisper)
+                if text.strip():
+                    if chatMode:
+                        async for chunk in ask_chat_streaming(text):
                             await websocket.send(chunk)
+                        await websocket.send("\n")
                     else:
-                        reply = ask_llm_lsd(text)
-                        print(f"Got this from LLM: {reply}")
-                        await websocket.send(reply)
+                        async for chunk in ask_llm_streaming(text):
+                            await websocket.send(chunk)
+                        await websocket.send("\n")
+
                 else:
                     print(f"No chunks received")
 
-
     except websockets.ConnectionClosed:
         print("Client disconnected")
+
 
 async def main():
     async with websockets.serve(handle_client, "localhost", 8765):

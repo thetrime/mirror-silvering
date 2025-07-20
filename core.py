@@ -2,31 +2,32 @@ import soundfile as sf
 import numpy as np
 import webrtcvad
 import atexit
-import whisper  # or use openai.Audio.transcribe for remote
+import whisper
 import sys
 import resampy
 import re
 from llama_cpp import Llama
-import asyncio
-from huggingface_hub import hf_hub_download, snapshot_download
+from huggingface_hub import hf_hub_download
 
 FRAME_DURATION = 30  # in ms
 VAD_MODE = 2  # 0–3, 3 = aggressive
 SILENCE_MS = 1000
 
 SYSTEM_PROMPT = (
-    "You are a friendly and curious assistant who always responds in a witty, British tone."
+    "You are a friendly and curious assistant who always responds in a witty, British tone. Your name is Nigel."
 )
 
-
-model_path = hf_hub_download(repo_id="TheBloke/Mistral-7B-Instruct-v0.2-GGUF", filename="mistral-7b-instruct-v0.2.Q5_K_S.gguf")
+model_path = hf_hub_download(repo_id="TheBloke/Mistral-7B-Instruct-v0.2-GGUF",
+                             filename="mistral-7b-instruct-v0.2.Q5_K_S.gguf")
 
 llm = Llama(
     model_path=model_path,
     n_ctx=32768,
     n_threads=8,
-    n_gpu_layers=35
+    n_gpu_layers=35,
+    chat_format="llama-3"
 )
+
 
 def read_audio(filename):
     audio, sample_rate = sf.read(filename)
@@ -34,22 +35,22 @@ def read_audio(filename):
         audio = audio.mean(axis=1)
     return audio, sample_rate
 
-def pcm_encode(audio, sample_rate):
+
+def pcm_encode(audio):
     """Convert float32 numpy array to PCM16 bytes"""
     audio_int16 = np.int16(audio * 32767)
     return audio_int16.tobytes()
+
 
 def split_audio_with_vad(audio, sample_rate):
     target_rate = 16000
     if sample_rate != target_rate:
         audio = resampy.resample(audio, sample_rate, target_rate)
-        sample_rate = target_rate
-
     vad = webrtcvad.Vad(VAD_MODE)
     frame_len = int(target_rate * FRAME_DURATION / 1000)  # samples
     frame_bytes = frame_len * 2  # int16 = 2 bytes
 
-    audio_pcm = pcm_encode(audio, target_rate)
+    audio_pcm = pcm_encode(audio)
     frames = [audio_pcm[i:i+frame_bytes]
               for i in range(0, len(audio_pcm), frame_bytes)]
     chunks, buffer, silence = [], [], 0
@@ -71,9 +72,11 @@ def split_audio_with_vad(audio, sample_rate):
 
     return chunks
 
+
 def pcm_to_float32(pcm_bytes):
     audio_np = np.frombuffer(pcm_bytes, dtype=np.int16).astype(np.float32)
     return audio_np / 32768.0
+
 
 def transcribe_chunks(chunks, sample_rate, whisper_model=None):
     all_text = []
@@ -85,11 +88,10 @@ def transcribe_chunks(chunks, sample_rate, whisper_model=None):
         all_text.append(result['text'].strip())
     return ' '.join(all_text)
 
-async def ask_llm_streaming(prompt: str):
+
+async def ask_chat_streaming(prompt: str):
     buffer = ""
     pattern = re.compile(r'([.,;!?。！？：\n])')  # punctuation that implies a boundary
-
-
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": prompt}
@@ -99,8 +101,8 @@ async def ask_llm_streaming(prompt: str):
 
     for chunk in stream:
         delta = chunk["choices"][0]["delta"]
-        token = delta.get("content", "")
-        if not token:
+        token = delta.get("content")
+        if not isinstance(token, str):
             continue
 
         buffer += token
@@ -114,19 +116,7 @@ async def ask_llm_streaming(prompt: str):
         yield buffer.strip()
 
 
-def ask_llm(prompt: str) -> str:
-
-    response = llm.create_chat_completion(
-        messages=[
-            {"role": "system", "content": "You are a witty British assistant."},
-            {"role": "user", "content": prompt},
-        ],
-        temperature=0.7,
-        max_tokens=512,
-    )
-    return response['choices'][0]['message']['content'].strip()
-
-async def ask_llm_lsd_streaming(prompt: str):
+async def ask_llm_streaming(prompt: str):
     buffer = ""
     pattern = re.compile(r'([.,;!?。！？：\n])')  # punctuation that implies a boundary
     full_prompt = f"{SYSTEM_PROMPT}\n\nUser: {prompt}\nAssistant:"
@@ -149,31 +139,6 @@ async def ask_llm_lsd_streaming(prompt: str):
         yield buffer.strip()
 
 
-def main(filename):
-    print(f"Reading audio: {filename}")
-    audio, sample_rate = read_audio(filename)
-
-    print("Splitting on pauses...")
-    chunks = split_audio_with_vad(audio, sample_rate)
-    print(f"Got {len(chunks)} chunks")
-
-    print("Transcribing with Whisper...")
-    model = whisper.load_model("base")  # or "tiny", "small", "medium", etc.
-    text = transcribe_chunks(chunks, sample_rate, model)
-
-    print("Final Transcription:")
-    print(text)
-
-    reply = ask_llm(text)
-    print("LLM:", reply)
-
-
 @atexit.register
 def free_model():
     llm.close()
-
-if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: python transcribe.py your_audio.wav")
-    else:
-        main(sys.argv[1])
