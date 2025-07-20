@@ -1,4 +1,6 @@
 soundfile
+websockets
+sounddevice
 numpy
 webrtcvad
 openai

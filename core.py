@@ -5,11 +5,14 @@ import atexit
 import whisper  # or use openai.Audio.transcribe for remote
 import sys
 import resampy
+import re
 from llama_cpp import Llama
+import asyncio
 from huggingface_hub import hf_hub_download, snapshot_download
 
 FRAME_DURATION = 30  # in ms
 VAD_MODE = 2  # 0–3, 3 = aggressive
+SILENCE_MS = 1000
 
 model_path = hf_hub_download(repo_id="TheBloke/Mistral-7B-Instruct-v0.2-GGUF", filename="mistral-7b-instruct-v0.2.Q5_K_S.gguf")
 
@@ -45,7 +48,7 @@ def split_audio_with_vad(audio, sample_rate):
     frames = [audio_pcm[i:i+frame_bytes]
               for i in range(0, len(audio_pcm), frame_bytes)]
     chunks, buffer, silence = [], [], 0
-    threshold = int(300 / FRAME_DURATION)  # e.g. 300ms silence
+    threshold = int(SILENCE_MS / FRAME_DURATION)  # e.g. 300ms silence
 
     for frame in frames:
         if len(frame) != frame_bytes:
@@ -81,10 +84,50 @@ SYSTEM_PROMPT = (
     "You are a friendly and curious assistant who always responds in a witty, British tone."
 )
 
+async def ask_llm_streaming(prompt: str):
+    buffer = ""
+    pattern = re.compile(r'([.,;!?。！？：\n])')  # punctuation that implies a boundary
+
+
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": prompt}
+    ]
+
+    stream = llm.create_chat_completion(messages=messages, stream=True)
+
+    for chunk in stream:
+        delta = chunk["choices"][0]["delta"]
+        token = delta.get("content", "")
+        if not token:
+            continue
+
+        buffer += token
+
+        # Check for natural break
+        if pattern.search(token) or len(buffer) > 100:  # fail-safe: send if buffer too long
+            yield buffer.strip()
+            buffer = ""
+
+    if buffer.strip():
+        yield buffer.strip()
+
+
 def ask_llm(prompt: str) -> str:
-    full_prompt = f"{SYSTEM_PROMPT}\n\nUser: {prompt}\nAssistant:"
-    response = llm(full_prompt, temperature=0.7, max_tokens=512)
-    return response['choices'][0]['text'].strip()
+
+    response = llm.create_chat_completion(
+        messages=[
+            {"role": "system", "content": "You are a witty British assistant."},
+            {"role": "user", "content": prompt},
+        ],
+        temperature=0.7,
+        max_tokens=512,
+    )
+    return response['choices'][0]['message']['content'].strip()
+
+    #full_prompt = f"{SYSTEM_PROMPT}\n\nUser: {prompt}\nAssistant:"
+    #response = llm(full_prompt, temperature=0.7, max_tokens=512, stop=["User:", "System:", "\n\n"])
+    #return response['choices'][0]['text'].strip()
 
 
 def main(filename):
