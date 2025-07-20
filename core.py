@@ -31,13 +31,6 @@ llm = Llama(
 )
 
 
-def read_audio(filename):
-    audio, sample_rate = sf.read(filename)
-    if len(audio.shape) > 1:  # Stereo -> mono
-        audio = audio.mean(axis=1)
-    return audio, sample_rate
-
-
 def pcm_encode(audio):
     """Convert float32 numpy array to PCM16 bytes"""
     audio_int16 = np.int16(audio * 32767)
@@ -92,6 +85,9 @@ def transcribe_chunks(chunks, sample_rate, whisper_model=None):
 
 
 async def chunked_stream(stream, get_token) -> AsyncGenerator[str, None]:
+    """
+    Turns a stream of tokens into a stream of chunked tokens
+    """
     buffer = ""
     async for chunk in stream:
         token = get_token(chunk)
