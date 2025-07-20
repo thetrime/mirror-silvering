@@ -2,12 +2,11 @@ import soundfile as sf
 import numpy as np
 import webrtcvad
 import atexit
-import whisper
-import sys
 import resampy
 import re
 from llama_cpp import Llama
 from huggingface_hub import hf_hub_download
+from collections.abc import AsyncGenerator
 
 FRAME_DURATION = 30  # in ms
 VAD_MODE = 2  # 0–3, 3 = aggressive
@@ -16,6 +15,9 @@ SILENCE_MS = 1000
 SYSTEM_PROMPT = (
     "You are a friendly and curious assistant who always responds in a witty, British tone. Your name is Nigel."
 )
+
+CHUNK_DELINEATION = re.compile(r'([.,;!?。！？：\n])')
+
 
 model_path = hf_hub_download(repo_id="TheBloke/Mistral-7B-Instruct-v0.2-GGUF",
                              filename="mistral-7b-instruct-v0.2.Q5_K_S.gguf")
@@ -89,54 +91,36 @@ def transcribe_chunks(chunks, sample_rate, whisper_model=None):
     return ' '.join(all_text)
 
 
-async def ask_chat_streaming(prompt: str):
+async def chunked_stream(stream, get_token) -> AsyncGenerator[str, None]:
     buffer = ""
-    pattern = re.compile(r'([.,;!?。！？：\n])')  # punctuation that implies a boundary
-    messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": prompt}
-    ]
-
-    stream = llm.create_chat_completion(messages=messages, stream=True)
-
-    for chunk in stream:
-        delta = chunk["choices"][0]["delta"]
-        token = delta.get("content")
+    async for chunk in stream:
+        token = get_token(chunk)
         if not isinstance(token, str):
             continue
 
         buffer += token
-
-        # Check for natural break
-        if pattern.search(token) or len(buffer) > 100:  # fail-safe: send if buffer too long
+        if CHUNK_DELINEATION.search(token) or len(buffer) > 100:
             yield buffer.strip()
             buffer = ""
 
     if buffer.strip():
         yield buffer.strip()
+
+
+async def ask_chat_streaming(prompt: str):
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": prompt}
+    ]
+    stream = llm.create_chat_completion(messages=messages, stream=True)
+    return chunked_stream(stream, lambda c: c["choices"][0]["delta"].get("content"))
 
 
 async def ask_llm_streaming(prompt: str):
-    buffer = ""
-    pattern = re.compile(r'([.,;!?。！？：\n])')  # punctuation that implies a boundary
     full_prompt = f"{SYSTEM_PROMPT}\n\nUser: {prompt}\nAssistant:"
-    stream = llm(full_prompt, temperature=0.7, max_tokens=512, stop=["User:", "System:", "\n\n"], stream=True)
-
-    for chunk in stream:
-        print(chunk)
-        token = chunk["choices"][0]["text"]
-        if not token:
-            continue
-
-        buffer += token
-
-        # Check for natural break
-        if pattern.search(token) or len(buffer) > 100:  # fail-safe: send if buffer too long
-            yield buffer.strip()
-            buffer = ""
-
-    if buffer.strip():
-        yield buffer.strip()
+    stream = llm(full_prompt, temperature=0.7, max_tokens=512,
+                 stop=["User:", "System:", "\n\n"], stream=True)
+    return chunked_stream(stream, lambda c: c["choices"][0]["text"])
 
 
 @atexit.register
