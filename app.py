@@ -1,8 +1,7 @@
 import soundfile as sf
 import numpy as np
 import webrtcvad
-import struct
-import io
+import atexit
 import whisper  # or use openai.Audio.transcribe for remote
 import sys
 import resampy
@@ -20,15 +19,6 @@ llm = Llama(
     n_threads=8,
     n_gpu_layers=35
 )
-
-
-# llm = Llama(
-#     model_path="./models/phi-3-mini.gguf",  # update path
-#     n_ctx=2048,
-#     n_gpu_layers=100,  # Enable MPS offloading
-#     use_mlock=True,
-#     n_threads=4
-# )
 
 def read_audio(filename):
     audio, sample_rate = sf.read(filename)
@@ -115,6 +105,10 @@ def main(filename):
     reply = ask_llm(text)
     print("LLM:", reply)
 
+
+@atexit.register
+def free_model():
+    llm.close()
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
