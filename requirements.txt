@@ -13,3 +13,9 @@ whisper
 # OR
 # CMAKE_ARGS="-DGGML_METAL=on" pip install llama-cpp-python
 llama-cpp-python -C cmake.args="-DGGML_METAL=on"
+
+
+chatterbox-tts
+torchaudio==2.6.0.dev20241115
+# You need torch > 2.7.0 to or you'll get that problem about trying to use > 65535 channels on MPS
+torch==2.6.0.dev20241115
