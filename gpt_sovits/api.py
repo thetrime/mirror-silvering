@@ -14,10 +14,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "extern" / "GPT-
 
 from gpt_sovits.models import init_model_env, init_checkpoint
 
-version = "v4"
+# Versions that work: v1, v2, v4
+# Versions that don't: v2Pro, v2ProPlus, v3 (all missing auxiliary stuff that uses hard-coded paths)
+version = "v2Pro"
 sovits = {"v1": (None, "s2G488k.pth"),
           "v2": ("gsv-v2final-pretrained", "s2G2333k.pth"),
-          "v3": (None, "s2Gv3.pt",),
+          "v3": (None, "s2Gv3.pth",),
           "v4": ("gsv-v4-pretrained", "s2Gv4.pth"),
           "v2Pro": ("v2Pro", "s2Gv2Pro.pth"),
           "v2ProPlus": ("v2Pro", "s2Gv2ProPlus.pth")}
@@ -52,6 +54,11 @@ if version == "v4":
     init_checkpoint({
         "vocoder_path": ("gsv-v4-pretrained", "vocoder.pth")
     })
+if version == "v3":
+    init_model_env({
+        "vocoder_path": ("models--nvidia--bigvgan_v2_24khz_100band_256x", ("config.json", "bigvgan_generator.pt"))
+    })
+
 _orig_torch_load = torch.load
 def patched_torch_load(path, *args, **kwargs):
     if isinstance(path, str) and path.endswith("vocoder.pth"):
