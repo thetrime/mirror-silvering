@@ -7,6 +7,9 @@ import re
 from llama_cpp import Llama
 from huggingface_hub import hf_hub_download
 from collections.abc import AsyncGenerator
+from whisper import load_model
+
+whisper = load_model("base")
 
 FRAME_DURATION = 30  # in ms
 VAD_MODE = 2  # 0–3, 3 = aggressive
@@ -73,12 +76,12 @@ def pcm_to_float32(pcm_bytes):
     return audio_np / 32768.0
 
 
-def transcribe_chunks(chunks, sample_rate, whisper_model=None):
+def transcribe_chunks(chunks):
     all_text = []
     for i, chunk in enumerate(chunks):
         audio_np = pcm_to_float32(chunk)
         # Whisper expects audio as float32 np.array
-        result = whisper_model.transcribe(audio_np, language='en', fp16=False, task='transcribe')
+        result = whisper.transcribe(audio_np, language='en', fp16=False, task='transcribe')
         print(f"[chunk {i}] {result['text']}")
         all_text.append(result['text'].strip())
     return ' '.join(all_text)

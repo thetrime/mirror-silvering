@@ -2,7 +2,6 @@ import asyncio
 import websockets
 import numpy as np
 
-from whisper import load_model
 from core import split_audio_with_vad, transcribe_chunks, ask_chat_streaming, ask_llm_streaming
 
 chatMode = True
@@ -10,7 +9,6 @@ SAMPLE_RATE = 16000
 CHUNK_DURATION_SEC = 5  # how much audio to collect before processing
 BYTES_PER_SAMPLE = 2  # 16-bit PCM
 
-whisper = load_model("base")
 
 buffer = bytearray()
 
@@ -33,7 +31,7 @@ async def handle_client(websocket: any) -> None:
 
                 chunks = split_audio_with_vad(audio, SAMPLE_RATE)
                 print(f"Processing {len(chunks)} chunks...")
-                text = transcribe_chunks(chunks, SAMPLE_RATE, whisper)
+                text = transcribe_chunks(chunks)
                 if text.strip():
                     if chatMode:
                         async for chunk in ask_chat_streaming(text):
