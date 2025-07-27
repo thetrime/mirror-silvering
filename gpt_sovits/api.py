@@ -2,11 +2,7 @@ import sys
 from pathlib import Path
 import os
 import nltk
-from io import BytesIO
-import librosa
-import soundfile as sf
-import numpy as np
-
+from core import whisper
 
 nltk.download('averaged_perceptron_tagger_eng')
 
@@ -51,18 +47,72 @@ import soundfile as sf
 import numpy as np
 import tempfile
 
-def prepare_audio(path, max_seconds=10.0) -> str:
-    wav, sr = librosa.load(path, sr=None)
+def prepare_audio(path, max_seconds=10.0, sr_target=None, top_db=30) -> str:
+    wav, sr = librosa.load(path, sr=sr_target)
     max_samples = int(max_seconds * sr)
-    if len(wav) > max_samples:
-        start = (len(wav) - max_samples) // 2
-        wav = wav[start:start + max_samples]
 
-    wav = wav.astype(np.float32)
+    if len(wav) <= max_samples:
+        trimmed = wav
+    else:
+        # Find non-silent intervals
+        nonsilent_intervals = librosa.effects.split(wav, top_db=top_db)
 
-    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
-        sf.write(tmp.name, wav, sr, format="WAV")
-        return tmp.name  # Return the filename
+        center_sample = len(wav) // 2
+
+        # Find silent boundaries (edges of non-silent intervals)
+        silent_boundaries = []
+
+        # Add start and end edges as silence too
+        prev_end = 0
+        for start, end in nonsilent_intervals:
+            # silence before this nonsilent segment
+            if start > prev_end:
+                silent_boundaries.append( (prev_end, start) )
+            prev_end = end
+        # silence after last nonsilent segment
+        if prev_end < len(wav):
+            silent_boundaries.append( (prev_end, len(wav)) )
+
+        # Find silent boundary closest to center sample with enough length for trimming
+        suitable_silence = None
+        for start, end in silent_boundaries:
+            length = end - start
+            if length >= max_samples:
+                # Check if center_sample falls within this silence, or nearby
+                if start <= center_sample <= end:
+                    suitable_silence = (start, end)
+                    break
+        # fallback: pick the silence with max length closest to center
+        if not suitable_silence and silent_boundaries:
+            silent_boundaries.sort(key=lambda x: (abs((x[0]+x[1])//2 - center_sample), -(x[1]-x[0])))
+            suitable_silence = silent_boundaries[0]
+
+        if suitable_silence:
+            # Place the max_seconds window within this silent region, centered near center_sample
+            silence_start, silence_end = suitable_silence
+            silence_center = (silence_start + silence_end) // 2
+            start = silence_center - max_samples // 2
+            start = max(silence_start, start)
+            if start + max_samples > silence_end:
+                start = silence_end - max_samples
+        else:
+            # fallback to simple center trim
+            start = center_sample - max_samples // 2
+
+        start = max(0, start)
+        end = start + max_samples
+        if end > len(wav):
+            end = len(wav)
+            start = end - max_samples
+
+        trimmed = wav[start:end]
+
+    trimmed = trimmed.astype(np.float32)
+
+    tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+    sf.write(tmp.name, trimmed, sr, format="WAV")
+    tmp.close()
+    return tmp.name
 
 class GPTSoVITS:
     def __init__(self):
@@ -75,7 +125,6 @@ class GPTSoVITS:
     def generate(
             self,
             ref_audio_path: str,
-            ref_text: str,
             target_text: str,
             target_language: str = "English",
             ref_language: str = "English",
@@ -88,7 +137,9 @@ class GPTSoVITS:
         tgt_lang = self.i18n(target_language)
 
         prepared_audio = prepare_audio(ref_audio_path)
-
+        ref_text = whisper.transcribe(prepared_audio)["text"].strip()
+        print(f"Calculated {ref_text}")
+        print(f"Prepared audio: {prepared_audio}")
         try:
             # Run synthesis
             result = list(
