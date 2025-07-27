@@ -6,7 +6,6 @@ In gpt_sovits there's a kind of wrapper that I use to abstract it, but the other
 pip install -r requirements.txt
 pip install -r extern/GPT-SoVITS/requirements.txt
 ```
-
 These require a few tools to be pre-installed: ffmpeg, cmake, unzip
 
-You also need all the models.
+You need a reference audio file in ref.wav
