@@ -3,6 +3,7 @@ from pathlib import Path
 import os
 import nltk
 from core import whisper
+import torch
 
 nltk.download('averaged_perceptron_tagger_eng')
 
@@ -13,20 +14,20 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "extern" / "GPT-
 
 from gpt_sovits.models import init_model_env, init_checkpoint
 
-version = "v1"
-sovits = {"v1": (None, ("s2G488k.pth",)),
-          "v2": (None, ("gsv-v2final-pretrained/s2G2333k.pth",)),
-          "v3": (None, ("s2Gv3.pt",)),
-          "v4": ("gsv-v4-pretrained", ("s2Gv4.pth", "vocoder.pth")),
-          "v2Pro": ("v2Pro", ("s2Gv2Pro.pth",)),
-          "v2ProPlus": ("v2Pro", ("s2Gv2ProPlus.pth",))}
+version = "v4"
+sovits = {"v1": (None, "s2G488k.pth"),
+          "v2": ("gsv-v2final-pretrained", "s2G2333k.pth"),
+          "v3": (None, "s2Gv3.pt",),
+          "v4": ("gsv-v4-pretrained", "s2Gv4.pth"),
+          "v2Pro": ("v2Pro", "s2Gv2Pro.pth"),
+          "v2ProPlus": ("v2Pro", "s2Gv2ProPlus.pth")}
 
-gpt = {"v1": (None, ("s1bert25hz-2kh-longer-epoch=68e-step=50232.ckpt",)),
-       "v2": ("gsv-v2final-pretrained", ("s1bert25hz-5kh-longer-epoch=12-step=369668.ckpt",)),
-       "v3": (None, ("s1v3.ckpt",)),
-       "v4": (None, ("s1v3.ckpt",)),
-       "v2Pro": (None, ("s1v3.ckpt",)),
-       "V2ProPlus": (None, ("s1v3.ckpt",))}
+gpt = {"v1": (None, "s1bert25hz-2kh-longer-epoch=68e-step=50232.ckpt"),
+       "v2": ("gsv-v2final-pretrained", "s1bert25hz-5kh-longer-epoch=12-step=369668.ckpt"),
+       "v3": (None, "s1v3.ckpt"),
+       "v4": (None, "s1v3.ckpt"),
+       "v2Pro": (None, "s1v3.ckpt"),
+       "V2ProPlus": (None, "s1v3.ckpt")}
 
 
 # Must run before importing GPT-SoVITS internals
@@ -44,6 +45,21 @@ init_checkpoint({
     "gpt_path": gpt[version],
     "sovits_path": sovits[version]
 })
+
+
+# This all hacks together the v4 vocoder. It's _not_ pretty
+if version == "v4":
+    init_checkpoint({
+        "vocoder_path": ("gsv-v4-pretrained", "vocoder.pth")
+    })
+_orig_torch_load = torch.load
+def patched_torch_load(path, *args, **kwargs):
+    if isinstance(path, str) and path.endswith("vocoder.pth"):
+        return _orig_torch_load(os.environ["vocoder_path"], *args, **kwargs)
+    else:
+        return _orig_torch_load(path, *args, **kwargs)
+torch.load = patched_torch_load
+# End upgly hack
 
 from GPT_SoVITS.inference_webui import (
     change_gpt_weights,

@@ -29,25 +29,20 @@ def init_model_env(env_to_files_map: dict, repo_id: str = "lj1995/GPT-SoVITS", r
         print(f"Set {env_var} to {model_dir}")
 
 def init_checkpoint(env_to_files_map: dict, repo_id: str = "lj1995/GPT-SoVITS", repo_type: str = "model"):
-    for env_var, (subfolder, filenames) in env_to_files_map.items():
-        first_file = None
-        for filename in filenames:
-            print(f"Downloading {filename} for {env_var} from {subfolder}...")
-            if subfolder:
-                path = hf_hub_download(
-                    repo_id=repo_id,
-                    filename=filename,
-                    subfolder=subfolder,
-                    repo_type=repo_type,
-                )
-            else:
-                path = hf_hub_download(
-                    repo_id=repo_id,
-                    filename=filename,
-                    repo_type=repo_type,
-                )
-            if first_file is None:
-                first_file = path
-
-        os.environ[env_var] = first_file
-        print(f"Set {env_var} to {first_file}")
+    for env_var, (subfolder, filename) in env_to_files_map.items():
+        print(f"Downloading {filename} for {env_var} from {subfolder}...")
+        if subfolder:
+            path = hf_hub_download(
+                repo_id=repo_id,
+                filename=filename,
+                subfolder=subfolder,
+                repo_type=repo_type,
+            )
+        else:
+            path = hf_hub_download(
+                repo_id=repo_id,
+                filename=filename,
+                repo_type=repo_type,
+            )
+        os.environ[env_var] = path
+        print(f"Set {env_var} to {path}")
