@@ -4,6 +4,8 @@ import os
 import nltk
 from core import whisper
 import torch
+import scipy.signal
+import time
 
 nltk.download('averaged_perceptron_tagger_eng')
 
@@ -17,7 +19,7 @@ from gpt_sovits.models import init_model_env, init_checkpoint
 # Versions that work: v1, v2, v4
 # Versions that don't: v2Pro, v2ProPlus, v3 - all missing auxiliary stuff that uses hard-coded paths.
 # Fixing it would require more changes to the monkey-patch below
-version = "v2Pro"
+version = "v4"
 sovits = {"v1": (None, "s2G488k.pth"),
           "v2": ("gsv-v2final-pretrained", "s2G2333k.pth"),
           "v3": (None, "s2Gv3.pth",),
@@ -162,7 +164,7 @@ class GPTSoVITS:
             target_text: str,
             target_language: str = "English",
             ref_language: str = "English",
-            output_path: str = "output.wav",
+            target_sr: int = 44100,
             top_p=1,
             temperature=1,
     ):
@@ -174,25 +176,45 @@ class GPTSoVITS:
         ref_text = whisper.transcribe(prepared_audio)["text"].strip()
         print(f"Calculated {ref_text}")
         print(f"Prepared audio: {prepared_audio}")
+        t0 = time.time()
         try:
-            # Run synthesis
-            result = list(
-                get_tts_wav(
-                    ref_wav_path=prepared_audio,
-                    prompt_text=ref_text,
-                    prompt_language=ref_lang,
-                    text=target_text,
-                    text_language=tgt_lang,
-                    top_p=top_p,
-                    temperature=temperature,
-                )
+            stream = get_tts_wav(
+                ref_wav_path=prepared_audio,
+                prompt_text=ref_text,
+                prompt_language=ref_lang,
+                text=target_text,
+                text_language=tgt_lang,
+                top_p=top_p,
+                temperature=temperature,
             )
+            for chunk in stream:
+                if t0 != 0:
+                    print(f"Time to first chunk: {time.time()-t0}s")
+                    t0 = 0
+                if isinstance(chunk, tuple) and len(chunk) == 2:
+                    a, b = chunk
+                    # Detect (sr, audio) vs (audio, sr) based on types
+                    if isinstance(a, int) and isinstance(b, np.ndarray):
+                        sr, audio = a, b
+                    elif isinstance(a, np.ndarray) and isinstance(b, int):
+                        audio, sr = a, b
+                    else:
+                        raise ValueError(f"Unknown chunk tuple format: ({type(a)}, {type(b)})")
+                elif isinstance(chunk, bytes):
+                    # Could decode WAV here with soundfile if needed
+                    raise NotImplementedError("Raw byte chunks not yet supported in this path.")
+                else:
+                    raise ValueError(f"Unexpected chunk type: {type(chunk)}")
+
+                if audio.ndim == 0:
+                    raise ValueError("Audio chunk is scalar — invalid.")
+                print(f"Target: {target_sr}, source: {sr}")
+                if sr != target_sr:
+                    n_samples = int(audio.shape[-1] * target_sr / sr)
+                    resampled = scipy.signal.resample(audio, n_samples).astype(np.int16)
+                else:
+                    resampled = audio.astype(np.int16)
+                yield resampled
+
         finally:
             os.remove(prepared_audio)
-
-        if not result:
-            raise RuntimeError("Synthesis returned no results")
-
-        sampling_rate, audio = result[-1]
-        sf.write(output_path, audio, sampling_rate)
-        return output_path
