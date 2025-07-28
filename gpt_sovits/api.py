@@ -15,7 +15,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "extern" / "GPT-
 from gpt_sovits.models import init_model_env, init_checkpoint
 
 # Versions that work: v1, v2, v4
-# Versions that don't: v2Pro, v2ProPlus, v3 (all missing auxiliary stuff that uses hard-coded paths)
+# Versions that don't: v2Pro, v2ProPlus, v3 - all missing auxiliary stuff that uses hard-coded paths.
+# Fixing it would require more changes to the monkey-patch below
 version = "v2Pro"
 sovits = {"v1": (None, "s2G488k.pth"),
           "v2": ("gsv-v2final-pretrained", "s2G2333k.pth"),
@@ -49,7 +50,7 @@ init_checkpoint({
 })
 
 
-# This all hacks together the v4 vocoder. It's _not_ pretty
+# This monkey-patch hacks together the v4 vocoder. It's _not_ pretty
 if version == "v4":
     init_checkpoint({
         "vocoder_path": ("gsv-v4-pretrained", "vocoder.pth")
