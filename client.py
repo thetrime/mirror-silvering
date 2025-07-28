@@ -1,6 +1,7 @@
 import asyncio
 import websockets
 import sounddevice as sd
+import numpy as np
 
 SAMPLE_RATE = 16000
 CHUNK_SIZE = 1024  # samples per frame
@@ -26,7 +27,8 @@ async def stream_audio():
             while True:
                 try:
                     reply = await websocket.recv()
-                    print(reply, end=" ", flush=True)
+                    chunk = np.frombuffer(reply, dtype=np.int16)
+                    sd.play(chunk, samplerate=44100, blocking=True)
                 except websockets.ConnectionClosed:
                     print("Server disconnected")
                     break
